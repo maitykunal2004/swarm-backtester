@@ -25,7 +25,6 @@ ChartJS.register(
 
 // Constants
 const FEE = 0.0005
-const INITIAL_BALANCE = 10000
 
 function App() {
   const [data, setData] = useState([])
@@ -43,6 +42,7 @@ function App() {
   const [swarmSize, setSwarmSize] = useState(1000)
   const [leverage, setLeverage] = useState(200)
   const [risk, setRisk] = useState(1)
+  const [initialCapital, setInitialCapital] = useState(10000)
   
   const fileInputRef = useRef(null)
 
@@ -115,14 +115,14 @@ function App() {
     reader.readAsText(file)
   }
 
-  const generateSwarm = (size) => {
+  const generateSwarm = (size, capital) => {
     const agents = []
     for (let i = 0; i < size; i++) {
       const strategyType = i % 4
       agents.push({
         id: i + 1,
-        balance: INITIAL_BALANCE,
-        equityCurve: [INITIAL_BALANCE],
+        balance: capital,
+        equityCurve: [capital],
         trades: 0,
         wins: 0,
         liquidated: false,
@@ -135,7 +135,8 @@ function App() {
           strategyType: strategyType,
           bias: Math.random() > 0.4 ? 1 : -1
         },
-        currentPosition: null
+        currentPosition: null,
+        tradeLog: []
       })
     }
     return agents
@@ -153,17 +154,34 @@ function App() {
     return sum / period
   }
 
-  const openPosition = (agent, price, type, leverageVal, riskVal) => {
+  const openPosition = (agent, price, type, leverageVal, riskVal, candleIndex) => {
     const margin = agent.balance * riskVal
     if (margin <= 0) return
     const positionSizeUnits = (margin * leverageVal) / price
     const fee = (positionSizeUnits * price) * FEE
     agent.balance -= fee
-    agent.currentPosition = { type, entry: price, size: positionSizeUnits }
+    agent.currentPosition = { 
+      type, 
+      entry: price, 
+      size: positionSizeUnits,
+      entryCandle: candleIndex,
+      entryTime: new Date().toISOString()
+    }
     agent.trades++
+    
+    // Log trade entry
+    agent.tradeLog.push({
+      type: 'OPEN',
+      direction: type,
+      price: price,
+      size: positionSizeUnits,
+      candle: candleIndex,
+      timestamp: new Date().toISOString(),
+      balance: agent.balance
+    })
   }
 
-  const closePosition = (agent, price) => {
+  const closePosition = (agent, price, candleIndex) => {
     const pos = agent.currentPosition
     const fee = (pos.size * price) * FEE
     const pnl = pos.type === 'long'
@@ -171,6 +189,22 @@ function App() {
       : (pos.entry - price) * pos.size
     agent.balance += (pnl - fee)
     if (pnl > 0) agent.wins++
+    
+    // Log trade exit with PnL
+    agent.tradeLog.push({
+      type: 'CLOSE',
+      direction: pos.type,
+      entryPrice: pos.entry,
+      exitPrice: price,
+      size: pos.size,
+      pnl: pnl,
+      pnlPercent: ((pnl / (pos.entry * pos.size)) * 100).toFixed(2),
+      fee: fee,
+      candle: candleIndex,
+      timestamp: new Date().toISOString(),
+      balance: agent.balance
+    })
+    
     agent.currentPosition = null
   }
 
@@ -181,7 +215,7 @@ function App() {
       : (pos.entry - price) * pos.size
   }
 
-  const runBacktestAsync = async (leverageVal, riskVal, swarmData) => {
+  const runBacktestAsync = async (leverageVal, riskVal, swarmData, capital) => {
     const batchSize = 100
     const currentSwarm = [...swarmData]
     
@@ -216,14 +250,26 @@ function App() {
           const pnlPct = pos.type === 'long' ? priceChange : -priceChange
 
           if (pnlPct * leverageVal <= -0.9) {
+            // Liquidation
+            agent.tradeLog.push({
+              type: 'LIQUIDATION',
+              direction: pos.type,
+              entryPrice: pos.entry,
+              exitPrice: candle.close,
+              size: pos.size,
+              pnl: -agent.balance,
+              candle: i,
+              timestamp: new Date().toISOString(),
+              balance: 0
+            })
             agent.balance = 0
             agent.liquidated = true
             agent.currentPosition = null
           } else if ((pos.type === 'long' && signal === -1) || (pos.type === 'short' && signal === 1)) {
-            closePosition(agent, candle.close)
+            closePosition(agent, candle.close, i)
           }
         } else if (signal !== 0) {
-          openPosition(agent, candle.close, signal === 1 ? 'long' : 'short', leverageVal, riskVal)
+          openPosition(agent, candle.close, signal === 1 ? 'long' : 'short', leverageVal, riskVal, i)
         }
 
         if (i % 10 === 0 || i === data.length - 1) {
@@ -247,22 +293,31 @@ function App() {
     const size = parseInt(swarmSize) || 100
     const leverageVal = parseFloat(leverage) || 1
     const riskVal = (parseFloat(risk) || 1) / 100
+    const capital = parseFloat(initialCapital) || 10000
 
-    const newSwarm = generateSwarm(size)
+    const newSwarm = generateSwarm(size, capital)
     setSwarm(newSwarm)
     setActiveCount(`${size} Agents Active`)
     setProgressLabel('Simulating Swarm')
     setRunDisabled(true)
 
+    console.log(`%c🚀 SWARM BACKTEST STARTED`, 'color: #3b82f6; font-size: 16px; font-weight: bold')
+    console.log(`%cConfiguration:`, 'color: #94a3b8; font-weight: bold')
+    console.log(`  • Swarm Size: ${size} agents`)
+    console.log(`  • Initial Capital: $${capital.toLocaleString()}`)
+    console.log(`  • Leverage: ${leverageVal}x`)
+    console.log(`  • Risk per Trade: ${(riskVal * 100).toFixed(1)}%`)
+    console.log('─'.repeat(60))
+
     const start = performance.now()
-    const result = await runBacktestAsync(leverageVal, riskVal, newSwarm)
+    const result = await runBacktestAsync(leverageVal, riskVal, newSwarm, capital)
     const end = performance.now()
 
     setRuntimeInfo(`Engine: ${(end - start).toFixed(0)}ms | ${size} Agents`)
-    finishBacktest(result)
+    finishBacktest(result, capital)
   }
 
-  const finishBacktest = (finalSwarm) => {
+  const finishBacktest = (finalSwarm, capital) => {
     setProgress(100)
     setProgressLabel('Complete')
     setStatus('Optimization Finished.')
@@ -270,6 +325,51 @@ function App() {
 
     const sorted = [...finalSwarm].sort((a, b) => b.balance - a.balance)
     setLeaderboard(sorted.slice(0, 100))
+
+    // Log best agent details
+    const bestAgent = sorted[0]
+    const roi = ((bestAgent.balance - capital) / capital * 100).toFixed(2)
+    const winRate = bestAgent.trades > 0 ? (bestAgent.wins / bestAgent.trades * 100).toFixed(1) : 0
+
+    console.log('%c' + '═'.repeat(60), 'color: #22c55e')
+    console.log(`%c🏆 BEST AGENT #${bestAgent.id}`, 'color: #22c55e; font-size: 18px; font-weight: bold')
+    console.log('%c' + '═'.repeat(60), 'color: #22c55e')
+    console.log(`%c📊 PERFORMANCE SUMMARY:`, 'color: #f59e0b; font-weight: bold')
+    console.log(`  • Final Balance: $${bestAgent.balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`)
+    console.log(`  • ROI: ${roi}%`)
+    console.log(`  • Total Trades: ${bestAgent.trades}`)
+    console.log(`  • Win Rate: ${winRate}%`)
+    console.log(`  • Liquidated: ${bestAgent.liquidated ? 'Yes ❌' : 'No ✅'}`)
+    console.log('')
+    console.log(`%c⚙️ STRATEGY PARAMETERS:`, 'color: #8b5cf6; font-weight: bold')
+    console.log(`  • Strategy Type: ${bestAgent.params.strategyType}`)
+    console.log(`  • MA Short: ${bestAgent.params.maS}`)
+    console.log(`  • MA Long: ${bestAgent.params.maL}`)
+    console.log(`  • Threshold: ${(bestAgent.params.threshold * 100).toFixed(3)}%`)
+    console.log(`  • Bias: ${bestAgent.params.bias > 0 ? 'Long 📈' : 'Short 📉'}`)
+    console.log('')
+    console.log(`%c📜 TRADE LOG (${bestAgent.tradeLog.length} entries):`, 'color: #06b6d4; font-weight: bold')
+    console.log('─'.repeat(60))
+    
+    bestAgent.tradeLog.forEach((trade, idx) => {
+      const time = new Date(trade.timestamp).toLocaleTimeString()
+      if (trade.type === 'OPEN') {
+        console.log(`%c[${time}] OPEN ${trade.direction.toUpperCase()}`, 'color: #3b82f6')
+        console.log(`  Price: $${trade.price.toFixed(2)} | Size: ${trade.size.toFixed(4)} | Balance: $${trade.balance.toFixed(2)}`)
+      } else if (trade.type === 'CLOSE') {
+        const pnlColor = trade.pnl >= 0 ? 'color: #22c55e' : 'color: #ef4444'
+        console.log(`%c[${time}] CLOSE ${trade.direction.toUpperCase()} | PnL: ${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)} (${trade.pnlPercent}%)`, pnlColor)
+        console.log(`  Entry: $${trade.entryPrice.toFixed(2)} → Exit: $${trade.exitPrice.toFixed(2)} | Fee: $${trade.fee.toFixed(2)} | Balance: $${trade.balance.toFixed(2)}`)
+      } else if (trade.type === 'LIQUIDATION') {
+        console.log(`%c[${time}] ⚠️ LIQUIDATION ${trade.direction.toUpperCase()}`, 'color: #ef4444; font-weight: bold')
+        console.log(`  Entry: $${trade.entryPrice.toFixed(2)} → Exit: $${trade.exitPrice.toFixed(2)} | Loss: $${Math.abs(trade.pnl).toFixed(2)}`)
+      }
+      if (idx < bestAgent.tradeLog.length - 1) console.log('')
+    })
+    
+    console.log('%c' + '═'.repeat(60), 'color: #22c55e')
+    console.log(`%c✅ BACKTEST COMPLETE`, 'color: #22c55e; font-size: 16px; font-weight: bold')
+    console.log('%c' + '═'.repeat(60), 'color: #22c55e')
 
     // Prepare chart data
     const labels = Array.from({ length: sorted[0].equityCurve.length }, (_, i) => i)
@@ -378,6 +478,15 @@ function App() {
 
             <div className="space-y-4">
               <div>
+                <label className="block text-xs text-slate-400 mb-1">Initial Capital ($)</label>
+                <input
+                  type="number"
+                  value={initialCapital}
+                  onChange={(e) => setInitialCapital(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
                 <label className="block text-xs text-slate-400 mb-1">Swarm Size</label>
                 <input
                   type="number"
@@ -481,7 +590,7 @@ function App() {
           </div>
           <div className="agent-grid max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
             {leaderboard.map((agent, idx) => {
-              const roi = ((agent.balance - INITIAL_BALANCE) / INITIAL_BALANCE * 100).toFixed(1)
+              const roi = ((agent.balance - initialCapital) / initialCapital * 100).toFixed(1)
               const winRate = agent.trades > 0 ? (agent.wins / agent.trades * 100).toFixed(0) : 0
 
               return (
@@ -501,7 +610,7 @@ function App() {
                       S{agent.params.strategyType}
                     </span>
                   </div>
-                  <div className={`font-mono font-bold ${agent.balance > INITIAL_BALANCE ? 'text-green-400' : 'text-red-400'}`}>
+                  <div className={`font-mono font-bold ${agent.balance > initialCapital ? 'text-green-400' : 'text-red-400'}`}>
                     {roi}%
                   </div>
                   <div className="text-[9px] text-slate-500 mt-1">
