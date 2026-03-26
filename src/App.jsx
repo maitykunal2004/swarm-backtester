@@ -38,6 +38,7 @@ function App() {
   const [activeCount, setActiveCount] = useState('0 Agents Active')
   const [leaderboard, setLeaderboard] = useState([])
   const [chartData, setChartData] = useState(null)
+  const [selectedAgent, setSelectedAgent] = useState(null)
   
   const [swarmSize, setSwarmSize] = useState(1000)
   const [leverage, setLeverage] = useState(200)
@@ -413,6 +414,32 @@ function App() {
     })
   }
 
+  const getStrategyFormula = (params) => {
+    const strategies = {
+      0: {
+        name: 'MA Crossover',
+        formula: `IF SMA(${params.maS}) > SMA(${params.maL}) AND Close < SMA(${params.maS}) THEN LONG\nIF SMA(${params.maS}) < SMA(${params.maL}) AND Close > SMA(${params.maS}) THEN SHORT`,
+        description: 'Trades on moving average crossover with price confirmation'
+      },
+      1: {
+        name: 'Mean Reversion',
+        formula: `IF Close < SMA(${params.maL}) × (1 - ${(params.threshold * 100).toFixed(3)}%) THEN LONG\nIF Close > SMA(${params.maL}) × (1 + ${(params.threshold * 100).toFixed(3)}%) THEN SHORT`,
+        description: 'Trades when price deviates from mean by threshold percentage'
+      },
+      2: {
+        name: 'Breakout',
+        formula: `IF Close > Previous High THEN LONG\nIF Close < Previous Low THEN SHORT`,
+        description: 'Trades on price breaking previous candle high/low'
+      },
+      3: {
+        name: 'Hybrid',
+        formula: `Combines MA Crossover + Breakout signals\nWeighted by volatility multiplier: ${params.volMult.toFixed(2)}`,
+        description: 'Multi-strategy approach combining multiple signals'
+      }
+    }
+    return strategies[params.strategyType] || strategies[0]
+  }
+
   const chartOptions = {
     maintainAspectRatio: false,
     responsive: true,
@@ -596,13 +623,14 @@ function App() {
               return (
                 <div
                   key={agent.id}
-                  className={`agent-card p-2 rounded border border-slate-700 ${
+                  onClick={() => setSelectedAgent(agent)}
+                  className={`agent-card p-2 rounded border border-slate-700 cursor-pointer hover:border-blue-500 transition-all ${
                     agent.liquidated
                       ? 'opacity-40 bg-slate-950'
                       : idx < 3
                         ? 'bg-blue-900/20 border-blue-500/50'
                         : 'bg-slate-800'
-                  }`}
+                  } ${selectedAgent?.id === agent.id ? 'ring-2 ring-blue-500' : ''}`}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="text-[10px] font-bold text-slate-500">#{idx + 1}</span>
@@ -621,6 +649,166 @@ function App() {
             })}
           </div>
         </div>
+
+        {/* Agent Detail Modal */}
+        {selectedAgent && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setSelectedAgent(null)}>
+            <div className="bg-slate-800 rounded-xl border border-slate-700 max-w-4xl w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold text-blue-400">Agent #{selectedAgent.id}</h2>
+                  <p className="text-slate-400 text-sm mt-1">Detailed Performance & Trade Log</p>
+                </div>
+                <button 
+                  onClick={() => setSelectedAgent(null)}
+                  className="text-slate-400 hover:text-white text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-100px)]">
+                {/* Performance Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <div className="bg-slate-900 p-4 rounded-lg">
+                    <div className="text-xs text-slate-400 mb-1">Final Balance</div>
+                    <div className={`text-xl font-bold font-mono ${selectedAgent.balance > initialCapital ? 'text-green-400' : 'text-red-400'}`}>
+                      ${selectedAgent.balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 p-4 rounded-lg">
+                    <div className="text-xs text-slate-400 mb-1">ROI</div>
+                    <div className={`text-xl font-bold font-mono ${selectedAgent.balance > initialCapital ? 'text-green-400' : 'text-red-400'}`}>
+                      {((selectedAgent.balance - initialCapital) / initialCapital * 100).toFixed(2)}%
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 p-4 rounded-lg">
+                    <div className="text-xs text-slate-400 mb-1">Win Rate</div>
+                    <div className="text-xl font-bold font-mono text-blue-400">
+                      {selectedAgent.trades > 0 ? (selectedAgent.wins / selectedAgent.trades * 100).toFixed(1) : 0}%
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 p-4 rounded-lg">
+                    <div className="text-xs text-slate-400 mb-1">Total Trades</div>
+                    <div className="text-xl font-bold font-mono text-slate-100">
+                      {selectedAgent.trades}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Strategy Formula */}
+                <div className="bg-slate-900 p-4 rounded-lg mb-6">
+                  <h3 className="text-sm font-semibold text-purple-400 mb-3">⚙️ Strategy Formula</h3>
+                  {(() => {
+                    const strategy = getStrategyFormula(selectedAgent.params)
+                    return (
+                      <div>
+                        <div className="text-xs text-slate-400 mb-2">{strategy.name}</div>
+                        <pre className="text-xs text-slate-300 bg-slate-800 p-3 rounded overflow-x-auto whitespace-pre-wrap">
+                          {strategy.formula}
+                        </pre>
+                        <div className="text-xs text-slate-500 mt-2">{strategy.description}</div>
+                      </div>
+                    )
+                  })()}
+                </div>
+
+                {/* Strategy Parameters */}
+                <div className="bg-slate-900 p-4 rounded-lg mb-6">
+                  <h3 className="text-sm font-semibold text-purple-400 mb-3">📊 Parameters</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <span className="text-slate-400">MA Short:</span>
+                      <span className="ml-2 text-slate-200">{selectedAgent.params.maS}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">MA Long:</span>
+                      <span className="ml-2 text-slate-200">{selectedAgent.params.maL}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Threshold:</span>
+                      <span className="ml-2 text-slate-200">{(selectedAgent.params.threshold * 100).toFixed(3)}%</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Vol Lookback:</span>
+                      <span className="ml-2 text-slate-200">{selectedAgent.params.volLookback}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Vol Multiplier:</span>
+                      <span className="ml-2 text-slate-200">{selectedAgent.params.volMult.toFixed(2)}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Bias:</span>
+                      <span className={`ml-2 ${selectedAgent.params.bias > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {selectedAgent.params.bias > 0 ? 'Long 📈' : 'Short 📉'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Liquidated:</span>
+                      <span className={`ml-2 ${selectedAgent.liquidated ? 'text-red-400' : 'text-green-400'}`}>
+                        {selectedAgent.liquidated ? 'Yes ❌' : 'No ✅'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trade Log */}
+                <div className="bg-slate-900 p-4 rounded-lg">
+                  <h3 className="text-sm font-semibold text-cyan-400 mb-3">📜 Trade Log ({selectedAgent.tradeLog.length} entries)</h3>
+                  <div className="max-h-[300px] overflow-y-auto custom-scrollbar space-y-2">
+                    {selectedAgent.tradeLog.length === 0 ? (
+                      <div className="text-slate-500 text-sm text-center py-4">No trades executed</div>
+                    ) : (
+                      selectedAgent.tradeLog.map((trade, idx) => {
+                        const time = new Date(trade.timestamp).toLocaleTimeString()
+                        return (
+                          <div key={idx} className="bg-slate-800 p-3 rounded text-xs">
+                            <div className="flex justify-between items-center mb-2">
+                              <span className={`font-semibold ${
+                                trade.type === 'OPEN' ? 'text-blue-400' :
+                                trade.type === 'CLOSE' ? (trade.pnl >= 0 ? 'text-green-400' : 'text-red-400') :
+                                'text-red-500'
+                              }`}>
+                                {trade.type === 'LIQUIDATION' && '⚠️ '}{trade.type} {trade.direction.toUpperCase()}
+                              </span>
+                              <span className="text-slate-500">[{time}]</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-slate-400">
+                              {trade.type === 'OPEN' && (
+                                <>
+                                  <div>Price: <span className="text-slate-200">${trade.price.toFixed(2)}</span></div>
+                                  <div>Size: <span className="text-slate-200">{trade.size.toFixed(4)}</span></div>
+                                </>
+                              )}
+                              {trade.type === 'CLOSE' && (
+                                <>
+                                  <div>Entry: <span className="text-slate-200">${trade.entryPrice.toFixed(2)}</span></div>
+                                  <div>Exit: <span className="text-slate-200">${trade.exitPrice.toFixed(2)}</span></div>
+                                  <div>PnL: <span className={trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                    {trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)} ({trade.pnlPercent}%)
+                                  </span></div>
+                                  <div>Fee: <span className="text-slate-200">${trade.fee.toFixed(2)}</span></div>
+                                </>
+                              )}
+                              {trade.type === 'LIQUIDATION' && (
+                                <>
+                                  <div>Entry: <span className="text-slate-200">${trade.entryPrice.toFixed(2)}</span></div>
+                                  <div>Exit: <span className="text-slate-200">${trade.exitPrice.toFixed(2)}</span></div>
+                                  <div>Loss: <span className="text-red-400">-${Math.abs(trade.pnl).toFixed(2)}</span></div>
+                                </>
+                              )}
+                              <div>Balance: <span className="text-slate-200">${trade.balance.toFixed(2)}</span></div>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
