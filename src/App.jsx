@@ -389,14 +389,16 @@ function App() {
 
     // Prepare chart data with timestamps
     const equityLength = sorted[0].equityCurve.length
-    const candleStartIndex = 100 // Backtest starts at candle 100
     const labels = []
+    // First equity point is at candle 100 (start of backtest)
+    // Then every 10 candles after that
     for (let i = 0; i < equityLength; i++) {
-      const candleIndex = candleStartIndex + (i * 10) // Equity recorded every 10 candles
-      if (timestamps[candleIndex]) {
+      const candleIndex = 100 + (i * 10)
+      if (timestamps[candleIndex] && timestamps[candleIndex].trim() !== '') {
         labels.push(timestamps[candleIndex])
       } else {
-        labels.push(`Candle ${candleIndex}`)
+        // Format as shorter label if no timestamp
+        labels.push(`#${candleIndex}`)
       }
     }
     
