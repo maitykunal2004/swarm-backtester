@@ -128,14 +128,16 @@ function App() {
     reader.readAsText(file)
   }
 
-  const generateSwarm = (size, capital) => {
+  const generateSwarm = (size, totalCapital) => {
+    const capitalPerAgent = totalCapital / size
     const agents = []
     for (let i = 0; i < size; i++) {
       const strategyType = i % 4
       agents.push({
         id: i + 1,
-        balance: capital,
-        equityCurve: [capital],
+        balance: capitalPerAgent,
+        equityCurve: [capitalPerAgent],
+        capitalPerAgent: capitalPerAgent,
         trades: 0,
         wins: 0,
         liquidated: false,
@@ -610,6 +612,11 @@ function App() {
             <div>
               <h2 className="text-lg font-semibold mb-2">Swarm Status</h2>
               <div className={`font-mono text-sm ${statusClass}`}>{status}</div>
+              {swarm.length > 0 && (
+                <div className="mt-2 text-xs text-slate-400">
+                  Capital per Agent: <span className="text-blue-400 font-mono">${(initialCapital / swarmSize).toFixed(2)}</span>
+                </div>
+              )}
             </div>
             <div className="mt-4">
               <div className="flex justify-between text-[10px] text-slate-500 mb-1 uppercase tracking-wider">
@@ -658,7 +665,8 @@ function App() {
           </div>
           <div className="agent-grid max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
             {leaderboard.map((agent, idx) => {
-              const roi = ((agent.balance - initialCapital) / initialCapital * 100).toFixed(1)
+              const capitalPerAgent = agent.capitalPerAgent || initialCapital / swarmSize
+              const roi = ((agent.balance - capitalPerAgent) / capitalPerAgent * 100).toFixed(1)
               const winRate = agent.trades > 0 ? (agent.wins / agent.trades * 100).toFixed(0) : 0
 
               return (
@@ -679,7 +687,7 @@ function App() {
                       S{agent.params.strategyType}
                     </span>
                   </div>
-                  <div className={`font-mono font-bold ${agent.balance > initialCapital ? 'text-green-400' : 'text-red-400'}`}>
+                  <div className={`font-mono font-bold ${agent.balance > capitalPerAgent ? 'text-green-400' : 'text-red-400'}`}>
                     {roi}%
                   </div>
                   <div className="text-[9px] text-slate-500 mt-1">
@@ -710,17 +718,23 @@ function App() {
               
               <div className="p-6 overflow-y-auto max-h-[calc(90vh-100px)]">
                 {/* Performance Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                  <div className="bg-slate-900 p-4 rounded-lg">
+                    <div className="text-xs text-slate-400 mb-1">Initial Capital</div>
+                    <div className="text-xl font-bold font-mono text-slate-100">
+                      ${selectedAgent.capitalPerAgent?.toFixed(2) || (initialCapital / swarmSize).toFixed(2)}
+                    </div>
+                  </div>
                   <div className="bg-slate-900 p-4 rounded-lg">
                     <div className="text-xs text-slate-400 mb-1">Final Balance</div>
-                    <div className={`text-xl font-bold font-mono ${selectedAgent.balance > initialCapital ? 'text-green-400' : 'text-red-400'}`}>
+                    <div className={`text-xl font-bold font-mono ${selectedAgent.balance > (selectedAgent.capitalPerAgent || initialCapital / swarmSize) ? 'text-green-400' : 'text-red-400'}`}>
                       ${selectedAgent.balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                     </div>
                   </div>
                   <div className="bg-slate-900 p-4 rounded-lg">
                     <div className="text-xs text-slate-400 mb-1">ROI</div>
-                    <div className={`text-xl font-bold font-mono ${selectedAgent.balance > initialCapital ? 'text-green-400' : 'text-red-400'}`}>
-                      {((selectedAgent.balance - initialCapital) / initialCapital * 100).toFixed(2)}%
+                    <div className={`text-xl font-bold font-mono ${selectedAgent.balance > (selectedAgent.capitalPerAgent || initialCapital / swarmSize) ? 'text-green-400' : 'text-red-400'}`}>
+                      {((selectedAgent.balance - (selectedAgent.capitalPerAgent || initialCapital / swarmSize)) / (selectedAgent.capitalPerAgent || initialCapital / swarmSize) * 100).toFixed(2)}%
                     </div>
                   </div>
                   <div className="bg-slate-900 p-4 rounded-lg">
