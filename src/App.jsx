@@ -28,6 +28,7 @@ const FEE = 0.0005
 
 function App() {
   const [data, setData] = useState([])
+  const [timestamps, setTimestamps] = useState([])
   const [swarm, setSwarm] = useState([])
   const [status, setStatus] = useState('Awaiting CSV or Tab-Delimited file...')
   const [statusClass, setStatusClass] = useState('text-yellow-500')
@@ -59,6 +60,7 @@ function App() {
 
       // Dynamic Column Mapping
       const mapping = {
+        date: columns.findIndex(c => c.includes('DATE') || c.includes('TIME') || c.includes('DATETIME')),
         open: columns.findIndex(c => c.includes('OPEN')),
         high: columns.findIndex(c => c.includes('HIGH')),
         low: columns.findIndex(c => c.includes('LOW')),
@@ -70,8 +72,10 @@ function App() {
       if (mapping.high === -1) mapping.high = 3
       if (mapping.low === -1) mapping.low = 4
       if (mapping.close === -1) mapping.close = 5
+      if (mapping.date === -1) mapping.date = 0
 
       const parsed = []
+      const parsedTimestamps = []
       // Start from line 1 if line 0 was a header, else 0
       const isHeader = isNaN(parseFloat(lines[0].split(delimiter)[mapping.open]))
       const startIndex = isHeader ? 1 : 0
@@ -87,14 +91,22 @@ function App() {
           close: parseFloat(row[mapping.close])
         }
 
+        // Parse timestamp
+        let timestamp = ''
+        if (mapping.date >= 0 && row[mapping.date]) {
+          timestamp = row[mapping.date].trim()
+        }
+
         if (!isNaN(candle.close)) {
           parsed.push(candle)
+          parsedTimestamps.push(timestamp)
         }
       }
 
       if (parsed.length === 0) throw new Error('No valid data rows found')
 
       setData(parsed)
+      setTimestamps(parsedTimestamps)
       setStatus(`READY: ${parsed.length.toLocaleString()} candles loaded. Format: ${delimiter === '\t' ? 'Tabs' : 'CSV'}`)
       setStatusClass('text-green-400')
       setRunDisabled(false)
@@ -178,6 +190,7 @@ function App() {
       size: positionSizeUnits,
       candle: candleIndex,
       timestamp: new Date().toISOString(),
+      candleTimestamp: timestamps[candleIndex] || '',
       balance: agent.balance
     })
   }
@@ -203,6 +216,7 @@ function App() {
       fee: fee,
       candle: candleIndex,
       timestamp: new Date().toISOString(),
+      candleTimestamp: timestamps[candleIndex] || '',
       balance: agent.balance
     })
     
@@ -261,6 +275,7 @@ function App() {
               pnl: -agent.balance,
               candle: i,
               timestamp: new Date().toISOString(),
+              candleTimestamp: timestamps[i] || '',
               balance: 0
             })
             agent.balance = 0
@@ -372,10 +387,21 @@ function App() {
     console.log(`%c✅ BACKTEST COMPLETE`, 'color: #22c55e; font-size: 16px; font-weight: bold')
     console.log('%c' + '═'.repeat(60), 'color: #22c55e')
 
-    // Prepare chart data
-    const labels = Array.from({ length: sorted[0].equityCurve.length }, (_, i) => i)
+    // Prepare chart data with timestamps
+    const equityLength = sorted[0].equityCurve.length
+    const candleStartIndex = 100 // Backtest starts at candle 100
+    const labels = []
+    for (let i = 0; i < equityLength; i++) {
+      const candleIndex = candleStartIndex + (i * 10) // Equity recorded every 10 candles
+      if (timestamps[candleIndex]) {
+        labels.push(timestamps[candleIndex])
+      } else {
+        labels.push(`Candle ${candleIndex}`)
+      }
+    }
+    
     const avgCurve = []
-    for (let t = 0; t < sorted[0].equityCurve.length; t++) {
+    for (let t = 0; t < equityLength; t++) {
       let sum = 0
       let active = 0
       finalSwarm.forEach(a => {
@@ -459,6 +485,9 @@ function App() {
         padding: 10,
         displayColors: true,
         callbacks: {
+          title: function(context) {
+            return context[0].label || ''
+          },
           label: function (context) {
             let label = context.dataset.label || ''
             if (label) {
@@ -473,7 +502,17 @@ function App() {
       }
     },
     scales: {
-      x: { display: false },
+      x: { 
+        display: true,
+        grid: { color: '#1e293b' },
+        ticks: {
+          color: '#64748b',
+          font: { size: 9 },
+          maxRotation: 45,
+          minRotation: 45,
+          maxTicksLimit: 15
+        }
+      },
       y: {
         grid: { color: '#1e293b' },
         ticks: {
@@ -760,7 +799,7 @@ function App() {
                       <div className="text-slate-500 text-sm text-center py-4">No trades executed</div>
                     ) : (
                       selectedAgent.tradeLog.map((trade, idx) => {
-                        const time = new Date(trade.timestamp).toLocaleTimeString()
+                        const time = trade.candleTimestamp || new Date(trade.timestamp).toLocaleTimeString()
                         return (
                           <div key={idx} className="bg-slate-800 p-3 rounded text-xs">
                             <div className="flex justify-between items-center mb-2">
