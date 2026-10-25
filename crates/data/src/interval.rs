@@ -5,9 +5,7 @@ use std::str::FromStr;
 use crate::error::DataError;
 
 /// Binance spot kline intervals supported by this project.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Interval {
     M1,
     M3,

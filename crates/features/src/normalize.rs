@@ -147,8 +147,8 @@ impl Normalizer {
             )));
         }
         let mut output = Vec::with_capacity(features.len());
-        for index in 0..features.len() {
-            let value = (features[index] - self.means[index]) / self.scales[index];
+        for (index, feature) in features.iter().enumerate() {
+            let value = (feature - self.means[index]) / self.scales[index];
             if !value.is_finite() {
                 return Err(FeatureError::CorruptOutput(format!(
                     "normalized feature {} is not finite",
@@ -160,7 +160,6 @@ impl Normalizer {
         Ok(output)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -188,17 +187,11 @@ mod tests {
     fn fit_uses_train_rows_only_and_guards_future_rows() {
         let (rows, spec) = fixture();
         let normalizer = Normalizer::fit(&rows, &spec).unwrap();
-        let train_rows = rows
-            .iter()
-            .filter(|row| row.split == Split::Train)
-            .count() as u64;
+        let train_rows = rows.iter().filter(|row| row.split == Split::Train).count() as u64;
         assert_eq!(normalizer.train_rows, train_rows);
         assert_eq!(normalizer.train_end_ms, spec.train_end_ms.unwrap());
 
-        let future = rows
-            .iter()
-            .find(|row| row.split == Split::Holdout)
-            .unwrap();
+        let future = rows.iter().find(|row| row.split == Split::Holdout).unwrap();
         let mut stats = RunningStats::new(FEATURE_NAMES_V1.len());
         let error = stats
             .push_train_row(future, spec.train_end_ms.unwrap())

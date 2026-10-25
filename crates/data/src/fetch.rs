@@ -48,7 +48,10 @@ pub struct FetchConfig {
 impl Default for FetchConfig {
     fn default() -> Self {
         Self {
-            base_url: "https://api.binance.com".to_string(),
+            // Official keyless market-data endpoint. `api.binance.com` is
+            // geo-blocked from some regions (HTTP 451); both are supported via
+            // `--base-url`.
+            base_url: crate::BINANCE_DATA_API_BASE_URL.to_string(),
             max_retries: 5,
             max_pages: 200_000,
             max_response_bytes: 8 * 1024 * 1024,
@@ -402,7 +405,9 @@ fn validate_request(request: &FetchRequest, config: &FetchConfig) -> Result<(), 
         )));
     }
     if config.max_pages == 0 {
-        return Err(DataError::InvalidRequest("max_pages must be > 0".to_string()));
+        return Err(DataError::InvalidRequest(
+            "max_pages must be > 0".to_string(),
+        ));
     }
     Ok(())
 }

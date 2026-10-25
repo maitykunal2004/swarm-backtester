@@ -19,14 +19,9 @@ pub use features_v1::{
 };
 pub use normalize::{Normalizer, RunningStats};
 pub use pit::PointInTime;
-pub use selftest::{
-    run_leakage_selftest, synthetic_bars, LeakageSelfTestReport, SelfTestCheck,
-};
-pub use target::{
-    compute_label, Direction, TargetLabel, TargetSpec, TARGET_SCHEMA_VERSION,
-};
+pub use selftest::{run_leakage_selftest, synthetic_bars, LeakageSelfTestReport, SelfTestCheck};
+pub use target::{compute_label, Direction, TargetLabel, TargetSpec, TARGET_SCHEMA_VERSION};
 pub use writer::{
     cached_range, normalized_header, raw_header, write_dataset_from_series, DatasetManifest,
     OutputPolicy, SourceInfo, MANIFEST_JSON, NORMALIZED_CSV, RAW_CSV,
 };
-

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -138,14 +139,15 @@ impl RawCache {
             .join(interval.as_str())
     }
 
-    /// List all raw pages for a series, sorted by request start then fetch time.
-    /// Only file names are read here; payloads stay on disk.
+    /// List one page per exact request key, choosing the newest fetch when a
+    /// request was refreshed. Every raw file remains on disk; this only defines
+    /// which immutable snapshot a read uses. Pages are sorted by start time.
     pub fn list_pages(&self, symbol: &str, interval: Interval) -> Result<Vec<PageRef>, DataError> {
         let dir = self.series_dir(symbol, interval);
         if !dir.exists() {
             return Ok(Vec::new());
         }
-        let mut pages = Vec::new();
+        let mut latest: BTreeMap<(i64, u16, i64), PageRef> = BTreeMap::new();
         for entry in fs::read_dir(&dir).map_err(|err| DataError::cache_io(&dir, err))? {
             let entry = entry.map_err(|err| DataError::cache_io(&dir, err))?;
             let name = entry.file_name().to_string_lossy().to_string();
@@ -166,16 +168,41 @@ impl RawCache {
             ) else {
                 continue;
             };
-            pages.push(PageRef {
+            let page = PageRef {
                 path: entry.path(),
                 start_ms: start,
                 limit: limit as u16,
                 end_ms: end,
                 fetched_at_ms: fetched,
-            });
+            };
+            let key = (page.start_ms, page.limit, page.end_ms);
+            match latest.get(&key) {
+                Some(existing) if existing.fetched_at_ms >= page.fetched_at_ms => {}
+                _ => {
+                    latest.insert(key, page);
+                }
+            }
         }
+        let mut pages: Vec<PageRef> = latest.into_values().collect();
         pages.sort_by_key(|page| (page.start_ms, page.fetched_at_ms));
         Ok(pages)
+    }
+
+    /// Count every raw payload file, including superseded refresh snapshots.
+    pub fn count_files(&self, symbol: &str, interval: Interval) -> Result<usize, DataError> {
+        let dir = self.series_dir(symbol, interval);
+        if !dir.exists() {
+            return Ok(0);
+        }
+        let mut count = 0usize;
+        for entry in fs::read_dir(&dir).map_err(|err| DataError::cache_io(&dir, err))? {
+            let entry = entry.map_err(|err| DataError::cache_io(&dir, err))?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".json") && !name.ends_with(".meta.json") {
+                count += 1;
+            }
+        }
+        Ok(count)
     }
 
     /// Store one raw page. Never overwrites: identical bytes at the same
@@ -200,8 +227,8 @@ impl RawCache {
 
         let mut deduplicated = false;
         if body_path.exists() {
-            let existing = fs::read(&body_path)
-                .map_err(|err| DataError::cache_io(&body_path, err))?;
+            let existing =
+                fs::read(&body_path).map_err(|err| DataError::cache_io(&body_path, err))?;
             if existing != body {
                 return Err(DataError::CacheConflict {
                     path: body_path,
@@ -235,8 +262,8 @@ impl RawCache {
         };
 
         if meta_path.exists() {
-            let existing = fs::read(&meta_path)
-                .map_err(|err| DataError::cache_io(&meta_path, err))?;
+            let existing =
+                fs::read(&meta_path).map_err(|err| DataError::cache_io(&meta_path, err))?;
             let existing_meta: PageMeta = serde_json::from_slice(&existing).map_err(|err| {
                 DataError::Parse(format!("corrupt cache metadata {meta_path:?}: {err}"))
             })?;
@@ -289,8 +316,8 @@ impl RawCache {
         };
         let body = fs::read(&path).map_err(|err| DataError::cache_io(&path, err))?;
         let meta_path = path.with_extension("meta.json");
-        let meta_bytes = fs::read(&meta_path)
-            .map_err(|err| DataError::cache_io(&meta_path, err))?;
+        let meta_bytes =
+            fs::read(&meta_path).map_err(|err| DataError::cache_io(&meta_path, err))?;
         let meta: PageMeta = serde_json::from_slice(&meta_bytes).map_err(|err| {
             DataError::Parse(format!("corrupt cache metadata {meta_path:?}: {err}"))
         })?;
@@ -298,14 +325,13 @@ impl RawCache {
         if actual != meta.sha256 {
             return Err(DataError::CacheConflict {
                 path,
-                details: format!("sha256 mismatch: metadata {} actual {}", meta.sha256, actual),
+                details: format!(
+                    "sha256 mismatch: metadata {} actual {}",
+                    meta.sha256, actual
+                ),
             });
         }
-        Ok(Some(CachedPage {
-            path,
-            meta,
-            body,
-        }))
+        Ok(Some(CachedPage { path, meta, body }))
     }
 
     pub fn count_pages(&self, symbol: &str, interval: Interval) -> Result<usize, DataError> {
@@ -357,7 +383,8 @@ fn write_new_file(path: &Path, bytes: &[u8]) -> Result<(), DataError> {
         }
         Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
             let _ = fs::remove_file(&temp_path);
-            let existing = fs::read(path).map_err(|read_err| DataError::cache_io(path, read_err))?;
+            let existing =
+                fs::read(path).map_err(|read_err| DataError::cache_io(path, read_err))?;
             if existing == bytes {
                 Ok(())
             } else {

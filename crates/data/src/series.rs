@@ -67,7 +67,9 @@ impl CachedSeries {
         let matched: Vec<_> = pages
             .into_iter()
             .filter(|page| {
-                let page_span_end = page.start_ms.saturating_add(page.limit as i64 * interval_ms);
+                let page_span_end = page
+                    .start_ms
+                    .saturating_add(page.limit as i64 * interval_ms);
                 page.start_ms < end_ms && page_span_end > start_ms
             })
             .collect();
@@ -80,8 +82,8 @@ impl CachedSeries {
 
         for page in matched {
             report.pages_read += 1;
-            let body = std::fs::read(&page.path)
-                .map_err(|err| DataError::cache_io(&page.path, err))?;
+            let body =
+                std::fs::read(&page.path).map_err(|err| DataError::cache_io(&page.path, err))?;
             let bars = Bar::parse_klines(&body)?;
             for bar in &bars {
                 if bar.open_time_ms < start_ms || bar.open_time_ms >= end_ms {
@@ -100,9 +102,7 @@ impl CachedSeries {
                 }
                 on_bar(bar)?;
                 report.bars_emitted += 1;
-                report
-                    .first_open_time_ms
-                    .get_or_insert(bar.open_time_ms);
+                report.first_open_time_ms.get_or_insert(bar.open_time_ms);
                 report.last_open_time_ms = Some(bar.open_time_ms);
                 last_open_time = Some(bar.open_time_ms);
             }

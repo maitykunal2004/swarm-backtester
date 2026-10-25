@@ -146,7 +146,10 @@ pub fn compute_label(
     }
     let entry_price = entry_bar.open;
     let exit_price = exit_bar.close;
-    if !entry_price.is_finite() || entry_price <= 0.0 || !exit_price.is_finite() || exit_price <= 0.0
+    if !entry_price.is_finite()
+        || entry_price <= 0.0
+        || !exit_price.is_finite()
+        || exit_price <= 0.0
     {
         return Err(FeatureError::IncompleteLabel(format!(
             "non-positive label prices: entry {entry_price}, exit {exit_price}"

@@ -68,10 +68,10 @@ pub fn compute_features_v1(pit: &PointInTime<'_>) -> Result<Vec<f64>, FeatureErr
     let mut taker_sum = 0.0;
     let mut volume_sum = 0.0;
     let mut trades: Vec<f64> = Vec::with_capacity(20);
-    for index in n - 20..n {
-        taker_sum += bars[index].taker_buy_base_volume;
-        volume_sum += bars[index].volume;
-        trades.push(bars[index].trades as f64);
+    for bar in &bars[n - 20..n] {
+        taker_sum += bar.taker_buy_base_volume;
+        volume_sum += bar.volume;
+        trades.push(bar.trades as f64);
     }
     let taker_buy_ratio_20 = if volume_sum > 1e-12 {
         taker_sum / volume_sum

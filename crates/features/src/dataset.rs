@@ -297,10 +297,11 @@ impl StreamingDataset {
                 continue;
             }
             let offset = global_index as i64 - buffer_start;
-            if offset >= 0 && (offset as usize) < self.buffer.len() {
-                if self.spec.is_decision_bar(&self.buffer[offset as usize]) {
-                    dropped += 1;
-                }
+            if offset >= 0
+                && (offset as usize) < self.buffer.len()
+                && self.spec.is_decision_bar(&self.buffer[offset as usize])
+            {
+                dropped += 1;
             }
         }
         self.stats.dropped_incomplete_horizon = dropped;

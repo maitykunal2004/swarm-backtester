@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use mb_data::{
     CachedSeries, FetchConfig, FetchReport, FetchRequest, HttpResponse, HttpTransport, Interval,
-    KlinesFetcher, RawCache, RateLimitPolicy, Sleeper,
+    KlinesFetcher, RateLimitPolicy, RawCache, Sleeper,
 };
 
 #[derive(Default)]
@@ -142,12 +142,8 @@ fn paginates_persists_and_reuses_cache() {
         ),
     ]);
     let sleeper = Arc::new(MockSleeper::default());
-    let mut fetcher = KlinesFetcher::with_components(
-        cache.clone(),
-        config(),
-        transport.clone(),
-        sleeper,
-    );
+    let mut fetcher =
+        KlinesFetcher::with_components(cache.clone(), config(), transport.clone(), sleeper);
 
     let (bars, report) = fetch_all_with_limit(&mut fetcher, START, end, 3);
     assert_eq!(bars.len(), 5);
@@ -167,7 +163,10 @@ fn paginates_persists_and_reuses_cache() {
         queries[1][2],
         ("startTime".to_string(), (START + 180_000).to_string())
     );
-    assert_eq!(queries[0][3], ("endTime".to_string(), (end - 1).to_string()));
+    assert_eq!(
+        queries[0][3],
+        ("endTime".to_string(), (end - 1).to_string())
+    );
     drop(queries);
 
     // Second run uses only cached pages: the mock has no responses left.
@@ -196,9 +195,17 @@ fn refresh_appends_new_pages_without_overwriting() {
     let cache = RawCache::new(dir.path());
     let end = START + 3 * 60_000;
     let transport = MockTransport::new(vec![
-        response(200, klines(&[START, START + 60_000, START + 120_000], 42_000.0), &[]),
+        response(
+            200,
+            klines(&[START, START + 60_000, START + 120_000], 42_000.0),
+            &[],
+        ),
         // Refreshed data at the same timestamps but different prices.
-        response(200, klines(&[START, START + 60_000, START + 120_000], 43_000.0), &[]),
+        response(
+            200,
+            klines(&[START, START + 60_000, START + 120_000], 43_000.0),
+            &[],
+        ),
     ]);
     let mut fetcher = KlinesFetcher::with_components(
         cache.clone(),
@@ -230,9 +237,15 @@ fn refresh_appends_new_pages_without_overwriting() {
     assert_ne!(first[0].close, refreshed[0].close);
 
     let pages = cache.list_pages("BTCUSDT", Interval::M1).unwrap();
-    assert_eq!(pages.len(), 2, "refresh must append, not replace");
+    assert_eq!(pages.len(), 1, "reads use one snapshot per exact request");
+    assert_eq!(cache.count_files("BTCUSDT", Interval::M1).unwrap(), 2);
+    assert_ne!(pages[0].path, old_paths[0], "newest refresh snapshot wins");
     assert!(old_paths[0].exists());
     assert_eq!(std::fs::read(&old_paths[0]).unwrap(), old_bytes);
+
+    let series = CachedSeries::new(cache, "BTCUSDT", Interval::M1);
+    let newest = series.collect_range(START, end, 10).unwrap();
+    assert_eq!(newest[0].close, 43_000.0);
 }
 
 #[test]
@@ -243,15 +256,15 @@ fn honors_retry_after_and_retries_5xx() {
     let transport = MockTransport::new(vec![
         response(429, "{\"code\":-1003}".to_string(), &[("Retry-After", "2")]),
         response(503, "upstream".to_string(), &[]),
-        response(200, klines(&[START, START + 60_000, START + 120_000], 42_000.0), &[]),
+        response(
+            200,
+            klines(&[START, START + 60_000, START + 120_000], 42_000.0),
+            &[],
+        ),
     ]);
     let sleeper = Arc::new(MockSleeper::default());
-    let mut fetcher = KlinesFetcher::with_components(
-        cache,
-        config(),
-        transport.clone(),
-        sleeper.clone(),
-    );
+    let mut fetcher =
+        KlinesFetcher::with_components(cache, config(), transport.clone(), sleeper.clone());
     let (bars, report) = fetch_all(&mut fetcher, START, end);
     assert_eq!(bars.len(), 3);
     assert_eq!(report.rate_limit_hits, 1);
@@ -280,7 +293,10 @@ fn stops_at_end_of_available_data() {
     let (bars, report) = fetch_all(&mut fetcher, START, START + 10 * 60_000);
     assert_eq!(bars.len(), 2);
     assert!(!report.complete);
-    assert_eq!(report.stop_reason, Some(mb_data::StopReason::EndOfAvailableData));
+    assert_eq!(
+        report.stop_reason,
+        Some(mb_data::StopReason::EndOfAvailableData)
+    );
     assert_eq!(report.next_unfetched_ms, START + 2 * 60_000);
 }
 
@@ -313,7 +329,10 @@ fn rejects_non_2xx_without_retrying() {
     );
     let request = FetchRequest::new("BTCUSDT", Interval::M1, START, START + 60_000);
     let error = fetcher.fetch(&request, &mut |_| Ok(())).unwrap_err();
-    assert!(matches!(error, mb_data::DataError::HttpStatus { status: 400, .. }));
+    assert!(matches!(
+        error,
+        mb_data::DataError::HttpStatus { status: 400, .. }
+    ));
     assert_eq!(transport.call_count(), 1);
 }
 
@@ -322,7 +341,10 @@ fn series_reader_merges_overlapping_pages_and_dedupes() {
     let dir = tempfile::tempdir().unwrap();
     let cache = RawCache::new(dir.path());
     let body_a = klines(&[START, START + 60_000, START + 120_000], 42_000.0);
-    let body_b = klines(&[START + 120_000, START + 180_000, START + 240_000], 42_000.0);
+    let body_b = klines(
+        &[START + 120_000, START + 180_000, START + 240_000],
+        42_000.0,
+    );
     for (start, limit, body) in [(START, 3u16, body_a), (START + 120_000, 3, body_b)] {
         cache
             .store_page(
@@ -342,9 +364,7 @@ fn series_reader_merges_overlapping_pages_and_dedupes() {
             .unwrap();
     }
     let series = CachedSeries::new(cache, "BTCUSDT", Interval::M1);
-    let bars = series
-        .collect_range(START, START + 600_000, 10)
-        .unwrap();
+    let bars = series.collect_range(START, START + 600_000, 10).unwrap();
     assert_eq!(bars.len(), 5);
     assert_eq!(bars.first().unwrap().open_time_ms, START);
     assert_eq!(bars.last().unwrap().open_time_ms, START + 240_000);
@@ -352,4 +372,60 @@ fn series_reader_merges_overlapping_pages_and_dedupes() {
         .read_range(START, START + 600_000, &mut |_| Ok(()))
         .unwrap();
     assert_eq!(report.duplicate_bars_skipped, 1);
+}
+
+#[test]
+fn identical_page_is_deduplicated_never_overwritten() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = RawCache::new(dir.path());
+    let body = klines(&[START, START + 60_000], 42_000.0);
+    let request = mb_data::PageRequest::new("BTCUSDT", Interval::M1, START, 2, START + 120_000);
+    let context = mb_data::StoreContext {
+        fetched_at_ms: 123,
+        http_status: 200,
+        used_weight_1m: Some(2),
+        retry_after_seconds: None,
+        source_url: "test".to_string(),
+        record_count: 2,
+        first_open_time_ms: Some(START),
+        last_open_time_ms: Some(START + 60_000),
+    };
+    let first = cache
+        .store_page(&request, body.as_bytes(), &context)
+        .unwrap();
+    assert!(!first.deduplicated);
+    let bytes = std::fs::read(&first.path).unwrap();
+    let second = cache
+        .store_page(&request, body.as_bytes(), &context)
+        .unwrap();
+    assert!(second.deduplicated);
+    assert_eq!(second.path, first.path);
+    assert_eq!(std::fs::read(&first.path).unwrap(), bytes);
+    assert_eq!(cache.count_pages("BTCUSDT", Interval::M1).unwrap(), 1);
+    let cached = cache.lookup(&request).unwrap().unwrap();
+    assert_eq!(cached.body, body.as_bytes());
+    assert_eq!(cached.meta.sha256, mb_data::sha256_hex(body.as_bytes()));
+}
+
+#[test]
+#[ignore = "hits Binance public market-data API (keyless)"]
+fn live_binance_smoke() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = RawCache::new(dir.path());
+    let start = 1_704_067_200_000i64;
+    let end = start + 3 * 60_000;
+    let transport = mb_data::UreqTransport::default();
+    let mut fetcher = KlinesFetcher::with_components(
+        cache.clone(),
+        FetchConfig::default(),
+        std::sync::Arc::new(transport),
+        std::sync::Arc::new(mb_data::ThreadSleeper),
+    );
+    let mut request = FetchRequest::new("BTCUSDT", Interval::M1, start, end);
+    request.limit = 3;
+    let (bars, report) = fetch_all_with_limit(&mut fetcher, start, end, 3);
+    assert_eq!(bars.len(), 3);
+    assert!(report.complete);
+    assert_eq!(bars[0].open_time_ms, start);
+    assert_eq!(cache.count_pages("BTCUSDT", Interval::M1).unwrap(), 1);
 }

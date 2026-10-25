@@ -210,9 +210,7 @@ pub fn write_dataset_from_series(
                     if row.split == Split::Train {
                         if let Err(error) = running.push_train_row(&row, train_end) {
                             pending = Some(error);
-                            return Err(DataError::Consumer(
-                                "normalizer guard failed".to_string(),
-                            ));
+                            return Err(DataError::Consumer("normalizer guard failed".to_string()));
                         }
                     }
                 }
@@ -369,9 +367,7 @@ fn write_normalized_csv(
                     FeatureError::CorruptOutput("missing feature field".to_string())
                 })?;
                 let value = text.parse::<f64>().map_err(|err| {
-                    FeatureError::CorruptOutput(format!(
-                        "feature '{text}' is not numeric: {err}"
-                    ))
+                    FeatureError::CorruptOutput(format!("feature '{text}' is not numeric: {err}"))
                 })?;
                 features.push(value);
             }

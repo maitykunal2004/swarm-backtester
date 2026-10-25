@@ -138,7 +138,10 @@ fn writes_raw_and_train_only_normalized_dataset() {
     let mut reader = csv::Reader::from_path(out.path().join("dataset.normalized.csv")).unwrap();
     assert_eq!(
         reader.headers().unwrap().iter().collect::<Vec<_>>(),
-        normalized_header().iter().map(String::as_str).collect::<Vec<_>>()
+        normalized_header()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
     );
     let feature_start = 8usize;
     let feature_count = manifest.feature_names.len();
@@ -200,10 +203,7 @@ fn output_policy_prevents_silent_dataset_overwrites() {
         OutputPolicy::FailIfExists,
     )
     .unwrap_err();
-    assert!(matches!(
-        error,
-        mb_features::FeatureError::OutputExists(_)
-    ));
+    assert!(matches!(error, mb_features::FeatureError::OutputExists(_)));
     assert_eq!(
         std::fs::read(out.path().join("dataset.raw.csv")).unwrap(),
         raw_before
@@ -241,7 +241,10 @@ fn cached_range_and_manifest_round_trip() {
     )
     .unwrap();
     let manifest = read_manifest(out.path());
-    assert_eq!(manifest.schema_version, mb_features::writer::MANIFEST_SCHEMA_VERSION);
+    assert_eq!(
+        manifest.schema_version,
+        mb_features::writer::MANIFEST_SCHEMA_VERSION
+    );
     assert_eq!(manifest.source.pages_matched, 2);
     assert_eq!(manifest.source.bars_emitted, 120);
     assert_eq!(manifest.spec.train_end_ms, Some(START + 90 * INTERVAL_MS));

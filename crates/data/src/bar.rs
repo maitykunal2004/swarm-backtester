@@ -37,8 +37,8 @@ impl Bar {
         let mut bars = Vec::with_capacity(rows.len());
         let mut previous: Option<i64> = None;
         for (index, row) in rows.iter().enumerate() {
-            let bar = parse_row(row)
-                .map_err(|err| DataError::Parse(format!("row {index}: {err}")))?;
+            let bar =
+                parse_row(row).map_err(|err| DataError::Parse(format!("row {index}: {err}")))?;
             bar.validate()
                 .map_err(|err| DataError::Parse(format!("row {index}: {err}")))?;
             if let Some(previous_open) = previous {
@@ -73,7 +73,10 @@ impl Bar {
             }
         }
         if !self.volume.is_finite() || self.volume < 0.0 {
-            return Err(format!("volume must be finite and non-negative: {}", self.volume));
+            return Err(format!(
+                "volume must be finite and non-negative: {}",
+                self.volume
+            ));
         }
         if !self.quote_volume.is_finite() || self.quote_volume < 0.0 {
             return Err("quote_volume must be finite and non-negative".to_string());
@@ -108,7 +111,10 @@ fn parse_row(row: &Value) -> Result<Bar, String> {
         .as_array()
         .ok_or_else(|| "expected array kline row".to_string())?;
     if cells.len() < 11 {
-        return Err(format!("expected at least 11 kline fields, got {}", cells.len()));
+        return Err(format!(
+            "expected at least 11 kline fields, got {}",
+            cells.len()
+        ));
     }
     Ok(Bar {
         open_time_ms: number_i64(&cells[0], "open_time")?,

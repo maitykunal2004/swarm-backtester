@@ -6,7 +6,9 @@ pub enum FeatureError {
     #[error("invalid dataset spec: {0}")]
     InvalidSpec(String),
 
-    #[error("insufficient history at decision {decision_time_ms}: need {needed} bars, got {available}")]
+    #[error(
+        "insufficient history at decision {decision_time_ms}: need {needed} bars, got {available}"
+    )]
     InsufficientHistory {
         decision_time_ms: i64,
         needed: usize,

@@ -47,6 +47,9 @@ pub struct WeightLimiter {
     policy: RateLimitPolicy,
     window_start_ms: i64,
     used_weight: u32,
+    /// Active window's server-reported weight hint.
+    server_weight_hint: u32,
+    /// Lifetime maximum, kept for reporting across window resets.
     server_used_weight_max: u32,
 }
 
@@ -56,6 +59,7 @@ impl WeightLimiter {
             policy,
             window_start_ms: 0,
             used_weight: 0,
+            server_weight_hint: 0,
             server_used_weight_max: 0,
         }
     }
@@ -86,11 +90,15 @@ impl WeightLimiter {
                 (60_000 - (now_ms - self.window_start_ms).clamp(0, 60_000)) as u64,
             );
         }
-        if self.window_start_ms == 0 || now_ms - self.window_start_ms >= 60_000 {
+        if self.window_start_ms == 0 {
             self.window_start_ms = now_ms;
             self.used_weight = 0;
+        } else if now_ms - self.window_start_ms >= 60_000 {
+            self.window_start_ms = now_ms;
+            self.used_weight = 0;
+            self.server_weight_hint = 0;
         }
-        let effective = self.used_weight.max(self.server_used_weight_max);
+        let effective = self.used_weight.max(self.server_weight_hint);
         if effective + weight <= budget {
             self.used_weight = self.used_weight.saturating_add(weight);
             return Duration::ZERO;
@@ -101,14 +109,15 @@ impl WeightLimiter {
 
     /// Fold in `X-MBX-USED-WEIGHT-1M` from a response.
     pub fn observe_server_weight(&mut self, used_weight: u32) {
-        self.server_used_weight_max = self.server_used_weight_max.max(used_weight);
+        self.server_weight_hint = self.server_weight_hint.max(used_weight);
         self.used_weight = self.used_weight.max(used_weight);
+        self.server_used_weight_max = self.server_used_weight_max.max(used_weight);
     }
 
     pub fn reset_window(&mut self, now_ms: i64) {
         self.window_start_ms = now_ms;
         self.used_weight = 0;
-        self.server_used_weight_max = 0;
+        self.server_weight_hint = 0;
     }
 }
 
@@ -141,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn server_weight_is_respected() {
+    fn server_weight_is_respected_and_resets_with_window() {
         let policy = RateLimitPolicy {
             weight_budget_per_minute: 100,
             safety_margin: 0,
@@ -150,5 +159,7 @@ mod tests {
         limiter.observe_server_weight(95);
         assert_eq!(limiter.acquire_at(5, 10_000), Duration::ZERO);
         assert!(limiter.acquire_at(6, 11_000) > Duration::ZERO);
+        assert_eq!(limiter.acquire_at(6, 71_000), Duration::ZERO);
+        assert_eq!(limiter.server_used_weight_max(), 95);
     }
 }

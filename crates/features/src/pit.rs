@@ -84,7 +84,10 @@ mod tests {
         let pit = PointInTime::new(&bars, 3).unwrap();
         assert_eq!(pit.len(), 4);
         assert_eq!(pit.bars().len(), 4);
-        assert_eq!(pit.bars().last().unwrap().open_time_ms, bars[3].open_time_ms);
+        assert_eq!(
+            pit.bars().last().unwrap().open_time_ms,
+            bars[3].open_time_ms
+        );
         assert_eq!(pit.decision_time_ms(), bars[3].close_time_ms);
         assert!(PointInTime::new(&bars, 10).is_err());
         assert!(PointInTime::new(&[], 0).is_err());

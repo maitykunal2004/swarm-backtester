@@ -11,7 +11,9 @@ use crate::target::TargetSpec;
 /// Deterministic synthetic OHLCV bars for offline tests. Prices follow a
 /// seeded random walk with contiguous one-minute candles.
 pub fn synthetic_bars(count: usize, start_ms: i64, interval_ms: i64, seed: u64) -> Vec<Bar> {
-    let mut state = seed.wrapping_mul(2_862_933_555_777_941_757).wrapping_add(3_037_000_493);
+    let mut state = seed
+        .wrapping_mul(2_862_933_555_777_941_757)
+        .wrapping_add(3_037_000_493);
     let mut price = 42_000.0;
     let mut bars = Vec::with_capacity(count);
     for index in 0..count {
@@ -189,18 +191,23 @@ pub fn run_leakage_selftest() -> Result<LeakageSelfTestReport, FeatureError> {
 
     // Every label must start strictly after the decision timestamp and all
     // rows must have a fully observed horizon.
-    let labels_start_after = rows
-        .iter()
-        .all(|row| row.entry_time_ms > row.decision_time_ms && row.exit_time_ms > row.entry_time_ms);
+    let labels_start_after = rows.iter().all(|row| {
+        row.entry_time_ms > row.decision_time_ms && row.exit_time_ms > row.entry_time_ms
+    });
     report.record(
         "labels_start_after_decision",
         labels_start_after,
-        format!("decision={} entry={}", base.decision_time_ms, base.entry_time_ms),
+        format!(
+            "decision={} entry={}",
+            base.decision_time_ms, base.entry_time_ms
+        ),
     );
-    let complete_horizons = rows.iter().all(|row| {
-        row.exit_time_ms
-            == row.decision_time_ms + horizon as i64 * interval_ms
-    }) && rows.iter().all(|row| row.exit_time_ms <= last_bar.close_time_ms);
+    let complete_horizons = rows
+        .iter()
+        .all(|row| row.exit_time_ms == row.decision_time_ms + horizon as i64 * interval_ms)
+        && rows
+            .iter()
+            .all(|row| row.exit_time_ms <= last_bar.close_time_ms);
     report.record(
         "no_incomplete_horizon_rows",
         complete_horizons && stats.dropped_incomplete_horizon > 0,
@@ -213,8 +220,7 @@ pub fn run_leakage_selftest() -> Result<LeakageSelfTestReport, FeatureError> {
     // PointInTime cannot reach the future.
     let pit = PointInTime::new(&bars, decision_index)?;
     let pit_hides_future = pit.bars().len() == decision_index + 1
-        && pit.bars().last().map(|bar| bar.open_time_ms)
-            == Some(bars[decision_index].open_time_ms)
+        && pit.bars().last().map(|bar| bar.open_time_ms) == Some(bars[decision_index].open_time_ms)
         && PointInTime::new(&bars, bars.len()).is_err();
     report.record(
         "point_in_time_view_hides_future",
@@ -224,7 +230,11 @@ pub fn run_leakage_selftest() -> Result<LeakageSelfTestReport, FeatureError> {
 
     // 1) Future corruption must not change the decision row's features.
     let mut future_corrupted = bars.clone();
-    for (index, bar) in future_corrupted.iter_mut().enumerate().skip(decision_index + 1) {
+    for (index, bar) in future_corrupted
+        .iter_mut()
+        .enumerate()
+        .skip(decision_index + 1)
+    {
         let factor = 1.0 + 0.08 * (index - decision_index) as f64;
         bar.open *= factor;
         bar.high *= factor;
@@ -262,7 +272,11 @@ pub fn run_leakage_selftest() -> Result<LeakageSelfTestReport, FeatureError> {
 
     // 2) Corrupting the past/decision bar must change features but not labels.
     let mut past_corrupted = bars.clone();
-    for (index, bar) in past_corrupted.iter_mut().enumerate().take(decision_index + 1) {
+    for (index, bar) in past_corrupted
+        .iter_mut()
+        .enumerate()
+        .take(decision_index + 1)
+    {
         let factor = 1.0 + 0.003 * ((index % 9) as f64 - 4.0);
         bar.open *= factor;
         bar.high *= factor;
