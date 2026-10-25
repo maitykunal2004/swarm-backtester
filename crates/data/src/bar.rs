@@ -95,10 +95,11 @@ impl Bar {
         Ok(())
     }
 
-    /// The decision timestamp used by the dataset layer: the first instant at
-    /// which this bar is complete and its close is known.
+    /// The decision timestamp used by the dataset layer: the last millisecond
+    /// of this bar, at which its close is final. Labels start strictly after
+    /// this instant, at the next bar's open.
     pub fn decision_time_ms(&self) -> i64 {
-        self.close_time_ms + 1
+        self.close_time_ms
     }
 }
 
@@ -164,7 +165,7 @@ mod tests {
         assert_eq!(bars[0].open_time_ms, 1_704_067_200_000);
         assert_eq!(bars[0].close, 42_050.50);
         assert_eq!(bars[0].trades, 500);
-        assert_eq!(bars[0].decision_time_ms(), 1_704_067_260_000);
+        assert_eq!(bars[0].decision_time_ms(), 1_704_067_259_999);
         assert_eq!(bars[1].open_time_ms, bars[0].open_time_ms + 60_000);
     }
 
