@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Rust / research artifacts
+/target
+**/*.rs.bk
+/data/cache/
+/data/datasets/
+/data/runs/
